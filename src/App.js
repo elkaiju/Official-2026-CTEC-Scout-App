@@ -179,7 +179,7 @@ export default function ScoutingApp() {
       });
     }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [running, phaseIdx, advancePhase]);
+  }, [running, phaseIdx, advancePhase, timeLeft]);
 
   useEffect(() => {
     if (timeLeft === 0 && running) advancePhase();
