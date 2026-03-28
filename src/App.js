@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import PitScoutScreen from './PitScoutScreen';
 
 // APPS_SCRIPT_URL remains the same
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9DLXJpk5WuuNqfIQrjGOkszK3nZW8d6tH0_CtHrg6icevySAURLKuERNQynihN-P-/exec";
@@ -207,10 +208,6 @@ function App() {
   const [savedPitReports, setSavedPitReports] = useState([]);
   const [sendStates, setSendStates] = useState({});
   const [pitSendStates, setPitSendStates] = useState({});
-  const [pitData, setPitData] = useState({});
-  const [pitNotes, setPitNotes] = useState("");
-  const [pitTeamNum, setPitTeamNum] = useState("");
-  const [pitScoutName, setPitScoutName] = useState("");
 
   const timerRef = useRef(null);
   const flashRef = useRef(null);
@@ -359,33 +356,6 @@ function App() {
     }
   };
 
-  const handlePitOption = (key, val, isMulti) => {
-    setPitData(prev => {
-      if (isMulti) {
-        const current = prev[key] || [];
-        return { ...prev, [key]: current.includes(val) ? current.filter(v => v !== val) : [...current, val] };
-      }
-      return { ...prev, [key]: prev[key] === val ? null : val };
-    });
-  };
-
-  const handleSavePit = () => {
-    const allAnswered = PIT_GROUPS.every(g => {
-      const val = pitData[g.key];
-      return g.type === "multi" ? (val && val.length > 0) : !!val;
-    });
-
-    if (allAnswered) {
-      savePitReport({
-        teamNum: pitTeamNum,
-        scoutName: pitScoutName,
-        pitData: pitData,
-        pitNotes: pitNotes,
-        timestamp: Date.now()
-      });
-    }
-  };
-
   const pc = currentPhase?.color || "#94a3b8";
   const pa = currentPhase?.accent || "#cbd5e1";
 
@@ -406,118 +376,6 @@ function App() {
         >
           {c.label}
         </button>
-    );
-  };
-
-  // Pit Scout Screen Component
-  const PitScoutScreen = () => {
-    const allAnswered = PIT_GROUPS.every(g => {
-      const val = pitData[g.key];
-      return g.type === "multi" ? (val && val.length > 0) : !!val;
-    });
-
-    const PIT_COLOR = "#f5c800";
-    const pitCard = { background: "#13131f", border: "1px solid #1e1e2e", borderRadius: 10, padding: "12px", marginBottom: 10 };
-    const pitLbl = { fontSize: 10, letterSpacing: 2, color: "#64748b", marginBottom: 4, textTransform: "uppercase" };
-    const pitSub = { fontSize: 10, color: "#475569", marginBottom: 8 };
-    const pitInp = { width: "100%", boxSizing: "border-box", background: "#0a0a0f", border: "1px solid #1e1e2e", borderRadius: 6, padding: "10px 12px", color: "#f1f5f9", fontSize: 14, fontFamily: "'Courier New', Courier, monospace", outline: "none" };
-    const pitOptBtn = (selected) => ({
-      padding: "10px 8px",
-      borderRadius: 7,
-      border: selected ? `2px solid ${PIT_COLOR}` : "2px solid #1e1e2e",
-      background: selected ? PIT_COLOR + "22" : "#0a0a0f",
-      color: selected ? PIT_COLOR : "#94a3b8",
-      fontSize: 12,
-      fontFamily: "'Courier New', Courier, monospace",
-      fontWeight: selected ? 700 : 400,
-      cursor: "pointer",
-      textAlign: "left",
-      lineHeight: 1.3,
-      display: "flex",
-      flexDirection: "column",
-      gap: 2,
-    });
-
-    return (
-        <div style={appStyle}>
-          <div style={{ padding: "12px 16px 10px", borderBottom: `2px solid ${PIT_COLOR}`, background: "#0f0f1a", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
-            <div>
-              <div style={{ fontSize: 11, letterSpacing: 3, color: PIT_COLOR, fontWeight: 700 }}>PIT SCOUT</div>
-              <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>Robot capabilities</div>
-            </div>
-            <div style={{ fontSize: 10, color: "#475569" }}>FRC 2026</div>
-          </div>
-
-          <div style={{ padding: "12px 14px 130px" }}>
-            <div style={pitCard}>
-              <div style={pitLbl}>Team Info</div>
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>Team #</div>
-                <input value={pitTeamNum} onChange={e => setPitTeamNum(e.target.value)} placeholder="e.g. 254" type="number" style={pitInp} />
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>Scout Name</div>
-                <input value={pitScoutName} onChange={e => setPitScoutName(e.target.value)} placeholder="Your name" style={pitInp} />
-              </div>
-            </div>
-
-            {PIT_GROUPS.map((group, gi) => {
-              const isMulti = group.type === "multi";
-              return (
-                  <div key={group.key} style={pitCard}>
-                    <div style={pitLbl}>
-                      <span style={{ color: PIT_COLOR, marginRight: 6 }}>0{gi + 1}</span>
-                      {group.label}
-                      {isMulti && <span style={{ color: "#475569", marginLeft: 6, fontSize: 9 }}>(MULTI)</span>}
-                    </div>
-                    <div style={pitSub}>{group.sub}</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {group.options.map(opt => {
-                        const selected = isMulti
-                            ? (pitData[group.key] || []).includes(opt.val)
-                            : pitData[group.key] === opt.val;
-                        return (
-                            <button key={opt.val} onClick={() => handlePitOption(group.key, opt.val, isMulti)} style={pitOptBtn(selected)}>
-                              <span style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</span>
-                              <span style={{ fontSize: 10, color: selected ? PIT_COLOR + "aa" : "#475569", fontWeight: 400 }}>{opt.desc}</span>
-                            </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-              );
-            })}
-
-            <div style={pitCard}>
-              <div style={pitLbl}>Free Notes</div>
-              <textarea
-                  value={pitNotes}
-                  onChange={e => setPitNotes(e.target.value)}
-                  placeholder="Build quality, mechanisms, driver comments, anything else..."
-                  rows={4}
-                  style={{ ...pitInp, resize: "none", fontSize: 13 }}
-              />
-            </div>
-          </div>
-
-          <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "#0f0f1a", borderTop: "2px solid #1e1e2e", padding: "10px 14px 20px", zIndex: 200 }}>
-            {!allAnswered && (
-                <div style={{ fontSize: 10, color: "#475569", textAlign: "center", marginBottom: 8, letterSpacing: 1 }}>
-                  ANSWER ALL 4 QUESTIONS TO SAVE
-                </div>
-            )}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <button onClick={() => setScreen("home")} style={btn("#1e1e2e", "#94a3b8")}>← BACK</button>
-              <button
-                  onClick={handleSavePit}
-                  disabled={!allAnswered}
-                  style={{ ...btn(allAnswered ? PIT_COLOR : "#1e1e2e", allAnswered ? "#0a0a0f" : "#475569"), opacity: allAnswered ? 1 : 0.5, cursor: allAnswered ? "pointer" : "not-allowed" }}
-              >
-                SAVE PIT ✓
-              </button>
-            </div>
-          </div>
-        </div>
     );
   };
 
@@ -638,7 +496,7 @@ function App() {
 
   // Pit Screen
   if (screen === "pit") {
-    return <PitScoutScreen />;
+    return <PitScoutScreen onBack={() => setScreen("home")} onSave={savePitReport} />;
   }
 
   // Scout Screen
