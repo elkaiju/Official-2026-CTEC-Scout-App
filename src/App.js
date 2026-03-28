@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzx3qAI2w9KrnKCK3V8VE65zfKarRhS8XM7DTUH6B3I5mEvXRS6BtX_34jQa_fqxFq4/exec";
+// APPS_SCRIPT_URL remains the same
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9DLXJpk5WuuNqfIQrjGOkszK3nZW8d6tH0_CtHrg6icevySAURLKuERNQynihN-P-/exec";
 
+// All constants remain the same
 const PHASES = [
   { id: "pre",        label: "PRE-MATCH",   duration: null, color: "#94a3b8", accent: "#cbd5e1" },
   { id: "auto",       label: "AUTONOMOUS",  duration: 20,   color: "#f59e0b", accent: "#fbbf24" },
@@ -134,13 +136,65 @@ const PHASE_OBSERVATIONS = {
   },
 };
 
+const PIT_GROUPS = [
+  {
+    label: "Auton Routines",
+    key: "pitAuton",
+    type: "multi",
+    sub: "Select all that apply",
+    options: [
+      { val: "mobility",      label: "Mobility Only",       desc: "Leaves starting zone" },
+      { val: "score_pre",     label: "Score Pre-loaded",     desc: "Shoots preloaded balls" },
+      { val: "collect_shoot", label: "Collect + Shoot",      desc: "Picks up & scores" },
+      { val: "auto_climb",    label: "Auto Climb (L1)",      desc: "Tower climb in auto" },
+      { val: "no_auto",       label: "No Auto",              desc: "No functioning routine" },
+    ],
+  },
+  {
+    label: "Shooter Type",
+    key: "pitShooter",
+    type: "single",
+    sub: "Select one",
+    options: [
+      { val: "turret",     label: "Turret",       desc: "Rotates independently of chassis" },
+      { val: "fixed",      label: "Fixed",        desc: "Whole robot aims" },
+      { val: "dumper",     label: "Dumper/Hopper", desc: "Close-range dump" },
+      { val: "no_shooter", label: "No Shooter",   desc: "Climb/defense only" },
+    ],
+  },
+  {
+    label: "Field Traversal",
+    key: "pitTraversal",
+    type: "multi",
+    sub: "Select all that apply",
+    options: [
+      { val: "bump",    label: "BUMP",          desc: "Can clear 6.5 in bump" },
+      { val: "trench",  label: "TRENCH",        desc: "Fits under 40.25 in trench" },
+      { val: "both",    label: "Both",          desc: "Fully versatile" },
+      { val: "neither", label: "Neither",       desc: "Stays in alliance zone" },
+    ],
+  },
+  {
+    label: "Climb Level",
+    key: "pitClimb",
+    type: "single",
+    sub: "Highest reliable level",
+    options: [
+      { val: "none", label: "No Climb",  desc: "Cannot hang" },
+      { val: "L1",   label: "Level 1",   desc: "Off ground — 10 pts" },
+      { val: "L2",   label: "Level 2",   desc: "Above low rung — 20 pts" },
+      { val: "L3",   label: "Level 3",   desc: "Above mid rung — 30 pts" },
+    ],
+  },
+];
+
 function formatTime(sec) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
 }
 
-export default function ScoutingApp() {
+function App() {
   const [screen, setScreen] = useState("home");
   const [matchInfo, setMatchInfo] = useState({ matchNum: "", teamNum: "", allianceColor: "blue", scoutName: "" });
   const [phaseIdx, setPhaseIdx] = useState(0);
@@ -150,7 +204,14 @@ export default function ScoutingApp() {
   const [notes, setNotes] = useState("");
   const [phaseFlash, setPhaseFlash] = useState(false);
   const [savedMatches, setSavedMatches] = useState([]);
+  const [savedPitReports, setSavedPitReports] = useState([]);
   const [sendStates, setSendStates] = useState({});
+  const [pitSendStates, setPitSendStates] = useState({});
+  const [pitData, setPitData] = useState({});
+  const [pitNotes, setPitNotes] = useState("");
+  const [pitTeamNum, setPitTeamNum] = useState("");
+  const [pitScoutName, setPitScoutName] = useState("");
+
   const timerRef = useRef(null);
   const flashRef = useRef(null);
 
@@ -162,19 +223,28 @@ export default function ScoutingApp() {
       setTimeLeft(PHASES[next].duration);
       if (next === PHASES.length - 1) setRunning(false);
       setPhaseFlash(true);
-      clearTimeout(flashRef.current);
+      if (flashRef.current) clearTimeout(flashRef.current);
       flashRef.current = setTimeout(() => setPhaseFlash(false), 600);
       return next;
     });
   }, []);
 
   useEffect(() => {
-    if (!running) { clearInterval(timerRef.current); return; }
+    if (!running) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
     if (timeLeft === null) return;
-    if (timeLeft <= 0) { advancePhase(); return; }
+    if (timeLeft <= 0) {
+      advancePhase();
+      return;
+    }
     timerRef.current = setInterval(() => {
       setTimeLeft(t => {
-        if (t <= 1) { clearInterval(timerRef.current); return 0; }
+        if (t <= 1) {
+          clearInterval(timerRef.current);
+          return 0;
+        }
         return t - 1;
       });
     }, 1000);
@@ -186,18 +256,26 @@ export default function ScoutingApp() {
   }, [timeLeft, running, advancePhase]);
 
   const startMatch = () => {
-    setPhaseIdx(1); setTimeLeft(20); setRunning(true);
-    setScreen("scout"); setData({}); setNotes("");
+    setPhaseIdx(1);
+    setTimeLeft(20);
+    setRunning(true);
+    setScreen("scout");
+    setData({});
+    setNotes("");
   };
 
   const goToPreMatch = () => {
-    setPhaseIdx(0); setTimeLeft(null); setRunning(false);
-    setScreen("scout"); setData({}); setNotes("");
+    setPhaseIdx(0);
+    setTimeLeft(null);
+    setRunning(false);
+    setScreen("scout");
+    setData({});
+    setNotes("");
   };
 
   const jumpToPhase = (idx) => {
     setRunning(false);
-    clearInterval(timerRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
     setPhaseIdx(idx);
     setTimeLeft(PHASES[idx].duration);
   };
@@ -218,6 +296,11 @@ export default function ScoutingApp() {
     setScreen("home");
   };
 
+  const savePitReport = (report) => {
+    setSavedPitReports(prev => [...prev, report]);
+    setScreen("home");
+  };
+
   const sendToSheet = async (matchIndex) => {
     if (APPS_SCRIPT_URL === "PASTE_YOUR_URL_HERE") {
       alert("Paste your Apps Script URL into APPS_SCRIPT_URL at the top of App.js");
@@ -227,15 +310,37 @@ export default function ScoutingApp() {
     const match = savedMatches[matchIndex];
     try {
       const payload = encodeURIComponent(JSON.stringify({
+        type: "match",
         matchInfo: match.matchInfo,
         data: match.data,
         notes: match.notes,
       }));
-      const url = `${APPS_SCRIPT_URL}?payload=${payload}`;
-      await fetch(url, { method: "GET", mode: "no-cors" });
+      await fetch(`${APPS_SCRIPT_URL}?payload=${payload}`, { method: "GET", mode: "no-cors" });
       setSendStates(s => ({ ...s, [matchIndex]: "sent" }));
-    } catch (err) {
+    } catch {
       setSendStates(s => ({ ...s, [matchIndex]: "error" }));
+    }
+  };
+
+  const sendPitToSheet = async (pitIndex) => {
+    if (APPS_SCRIPT_URL === "PASTE_YOUR_URL_HERE") {
+      alert("Paste your Apps Script URL into APPS_SCRIPT_URL at the top of App.js");
+      return;
+    }
+    setPitSendStates(s => ({ ...s, [pitIndex]: "sending" }));
+    const report = savedPitReports[pitIndex];
+    try {
+      const payload = encodeURIComponent(JSON.stringify({
+        type: "pit",
+        teamNum: report.teamNum,
+        scoutName: report.scoutName,
+        pitData: report.pitData,
+        pitNotes: report.pitNotes,
+      }));
+      await fetch(`${APPS_SCRIPT_URL}?payload=${payload}`, { method: "GET", mode: "no-cors" });
+      setPitSendStates(s => ({ ...s, [pitIndex]: "sent" }));
+    } catch {
+      setPitSendStates(s => ({ ...s, [pitIndex]: "error" }));
     }
   };
 
@@ -246,24 +351,57 @@ export default function ScoutingApp() {
         await new Promise(r => setTimeout(r, 400));
       }
     }
+    for (let i = 0; i < savedPitReports.length; i++) {
+      if (pitSendStates[i] !== "sent") {
+        await sendPitToSheet(i);
+        await new Promise(r => setTimeout(r, 400));
+      }
+    }
   };
 
-  const pc = currentPhase.color;
-  const pa = currentPhase.accent;
+  const handlePitOption = (key, val, isMulti) => {
+    setPitData(prev => {
+      if (isMulti) {
+        const current = prev[key] || [];
+        return { ...prev, [key]: current.includes(val) ? current.filter(v => v !== val) : [...current, val] };
+      }
+      return { ...prev, [key]: prev[key] === val ? null : val };
+    });
+  };
+
+  const handleSavePit = () => {
+    const allAnswered = PIT_GROUPS.every(g => {
+      const val = pitData[g.key];
+      return g.type === "multi" ? (val && val.length > 0) : !!val;
+    });
+
+    if (allAnswered) {
+      savePitReport({
+        teamNum: pitTeamNum,
+        scoutName: pitScoutName,
+        pitData: pitData,
+        pitNotes: pitNotes,
+        timestamp: Date.now()
+      });
+    }
+  };
+
+  const pc = currentPhase?.color || "#94a3b8";
+  const pa = currentPhase?.accent || "#cbd5e1";
 
   const card = { background: "#13131f", border: "1px solid #1e1e2e", borderRadius: 10, padding: "12px", marginBottom: 10 };
-  const lbl  = { fontSize: 10, letterSpacing: 2, color: "#64748b", marginBottom: 8, textTransform: "uppercase" };
-  const inp  = { width: "100%", boxSizing: "border-box", background: "#0a0a0f", border: "1px solid #1e1e2e", borderRadius: 6, padding: "10px 12px", color: "#f1f5f9", fontSize: 14, fontFamily: "'Courier New', Courier, monospace", outline: "none" };
-  const btn  = (bg, fg = "#fff") => ({ padding: "12px", borderRadius: 8, background: bg, color: fg, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'Courier New', Courier, monospace", letterSpacing: 1, WebkitTapHighlightColor: "transparent" });
-  const optBtn = (selected) => ({ padding: "10px 8px", borderRadius: 7, border: selected ? `2px solid ${pc}` : "2px solid #1e1e2e", background: selected ? pc + "22" : "#0a0a0f", color: selected ? pc : "#94a3b8", fontSize: 12, fontFamily: "'Courier New', Courier, monospace", fontWeight: selected ? 700 : 400, cursor: "pointer", textAlign: "center", lineHeight: 1.3, WebkitTapHighlightColor: "transparent" });
+  const lbl = { fontSize: 10, letterSpacing: 2, color: "#64748b", marginBottom: 8, textTransform: "uppercase" };
+  const inp = { width: "100%", boxSizing: "border-box", background: "#0a0a0f", border: "1px solid #1e1e2e", borderRadius: 6, padding: "10px 12px", color: "#f1f5f9", fontSize: 14, fontFamily: "'Courier New', Courier, monospace", outline: "none" };
+  const btn = (bg, fg = "#fff") => ({ padding: "12px", borderRadius: 8, background: bg, color: fg, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'Courier New', Courier, monospace", letterSpacing: 1 });
+  const optBtn = (selected) => ({ padding: "10px 8px", borderRadius: 7, border: selected ? `2px solid ${pc}` : "2px solid #1e1e2e", background: selected ? pc + "22" : "#0a0a0f", color: selected ? pc : "#94a3b8", fontSize: 12, fontFamily: "'Courier New', Courier, monospace", fontWeight: selected ? 700 : 400, cursor: "pointer", textAlign: "center", lineHeight: 1.3 });
   const appStyle = { minHeight: "100vh", background: "#0a0a0f", color: "#f1f5f9", fontFamily: "'Courier New', Courier, monospace", maxWidth: 430, margin: "0 auto" };
 
-  const SendBtn = ({ index }) => {
-    const state = sendStates[index] || "idle";
+  const SendBtn = ({ index, type }) => {
+    const state = (type === "pit" ? pitSendStates : sendStates)[index] || "idle";
     const c = { idle: { label: "SEND →", bg: "#1e3a5f", fg: "#60a5fa" }, sending: { label: "SENDING…", bg: "#1e1e2e", fg: "#94a3b8" }, sent: { label: "✓ SENT", bg: "#14532d", fg: "#86efac" }, error: { label: "✗ RETRY", bg: "#450a0a", fg: "#fca5a5" } }[state];
     return (
         <button
-            onClick={() => state !== "sending" && state !== "sent" && sendToSheet(index)}
+            onClick={() => state !== "sending" && state !== "sent" && (type === "pit" ? sendPitToSheet(index) : sendToSheet(index))}
             style={{ padding: "7px 12px", borderRadius: 6, background: c.bg, color: c.fg, border: "none", fontSize: 10, fontWeight: 700, cursor: state === "sent" ? "default" : "pointer", fontFamily: "'Courier New', Courier, monospace", letterSpacing: 1, flexShrink: 0 }}
         >
           {c.label}
@@ -271,95 +409,248 @@ export default function ScoutingApp() {
     );
   };
 
-  // ── HOME ────────────────────────────────────────────────────────────────────
-  if (screen === "home") return (
-      <div style={appStyle}>
-        <div style={{ padding: 20 }}>
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 10, letterSpacing: 4, color: "#3b82f6", marginBottom: 4 }}>FRC 2026</div>
-            <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: -1 }}>REBUILT</div>
-            <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2 }}>QUALITATIVE SCOUT v1.1</div>
+  // Pit Scout Screen Component
+  const PitScoutScreen = () => {
+    const allAnswered = PIT_GROUPS.every(g => {
+      const val = pitData[g.key];
+      return g.type === "multi" ? (val && val.length > 0) : !!val;
+    });
+
+    const PIT_COLOR = "#f5c800";
+    const pitCard = { background: "#13131f", border: "1px solid #1e1e2e", borderRadius: 10, padding: "12px", marginBottom: 10 };
+    const pitLbl = { fontSize: 10, letterSpacing: 2, color: "#64748b", marginBottom: 4, textTransform: "uppercase" };
+    const pitSub = { fontSize: 10, color: "#475569", marginBottom: 8 };
+    const pitInp = { width: "100%", boxSizing: "border-box", background: "#0a0a0f", border: "1px solid #1e1e2e", borderRadius: 6, padding: "10px 12px", color: "#f1f5f9", fontSize: 14, fontFamily: "'Courier New', Courier, monospace", outline: "none" };
+    const pitOptBtn = (selected) => ({
+      padding: "10px 8px",
+      borderRadius: 7,
+      border: selected ? `2px solid ${PIT_COLOR}` : "2px solid #1e1e2e",
+      background: selected ? PIT_COLOR + "22" : "#0a0a0f",
+      color: selected ? PIT_COLOR : "#94a3b8",
+      fontSize: 12,
+      fontFamily: "'Courier New', Courier, monospace",
+      fontWeight: selected ? 700 : 400,
+      cursor: "pointer",
+      textAlign: "left",
+      lineHeight: 1.3,
+      display: "flex",
+      flexDirection: "column",
+      gap: 2,
+    });
+
+    return (
+        <div style={appStyle}>
+          <div style={{ padding: "12px 16px 10px", borderBottom: `2px solid ${PIT_COLOR}`, background: "#0f0f1a", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: 3, color: PIT_COLOR, fontWeight: 700 }}>PIT SCOUT</div>
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>Robot capabilities</div>
+            </div>
+            <div style={{ fontSize: 10, color: "#475569" }}>FRC 2026</div>
           </div>
 
-          <div style={{ ...card, marginBottom: 16 }}>
-            <div style={lbl}>MATCH INFO</div>
-            {[
-              { label: "Scout Name", key: "scoutName", placeholder: "Your name" },
-              { label: "Team #",     key: "teamNum",   placeholder: "e.g. 254", type: "number" },
-              { label: "Match #",    key: "matchNum",  placeholder: "e.g. Q42" },
-            ].map(f => (
-                <div key={f.key} style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>{f.label}</div>
-                  <input
-                      value={matchInfo[f.key]}
-                      onChange={e => setMatchInfo(m => ({ ...m, [f.key]: e.target.value }))}
-                      placeholder={f.placeholder}
-                      type={f.type || "text"}
-                      style={inp}
-                  />
-                </div>
-            ))}
-            <div>
-              <div style={{ fontSize: 10, color: "#475569", marginBottom: 6 }}>Alliance Color</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {["blue", "red"].map(c => (
-                    <button key={c} onClick={() => setMatchInfo(m => ({ ...m, allianceColor: c }))}
-                            style={{ flex: 1, padding: "10px", borderRadius: 6, fontFamily: "'Courier New', Courier, monospace", fontWeight: 700, fontSize: 13, cursor: "pointer", border: "2px solid", borderColor: matchInfo.allianceColor === c ? (c === "blue" ? "#3b82f6" : "#ef4444") : "#1e1e2e", background: matchInfo.allianceColor === c ? (c === "blue" ? "#1d4ed844" : "#7f1d1d44") : "#0a0a0f", color: matchInfo.allianceColor === c ? (c === "blue" ? "#60a5fa" : "#f87171") : "#475569" }}>
-                      {c.toUpperCase()}
-                    </button>
-                ))}
+          <div style={{ padding: "12px 14px 130px" }}>
+            <div style={pitCard}>
+              <div style={pitLbl}>Team Info</div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>Team #</div>
+                <input value={pitTeamNum} onChange={e => setPitTeamNum(e.target.value)} placeholder="e.g. 254" type="number" style={pitInp} />
               </div>
+              <div>
+                <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>Scout Name</div>
+                <input value={pitScoutName} onChange={e => setPitScoutName(e.target.value)} placeholder="Your name" style={pitInp} />
+              </div>
+            </div>
+
+            {PIT_GROUPS.map((group, gi) => {
+              const isMulti = group.type === "multi";
+              return (
+                  <div key={group.key} style={pitCard}>
+                    <div style={pitLbl}>
+                      <span style={{ color: PIT_COLOR, marginRight: 6 }}>0{gi + 1}</span>
+                      {group.label}
+                      {isMulti && <span style={{ color: "#475569", marginLeft: 6, fontSize: 9 }}>(MULTI)</span>}
+                    </div>
+                    <div style={pitSub}>{group.sub}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {group.options.map(opt => {
+                        const selected = isMulti
+                            ? (pitData[group.key] || []).includes(opt.val)
+                            : pitData[group.key] === opt.val;
+                        return (
+                            <button key={opt.val} onClick={() => handlePitOption(group.key, opt.val, isMulti)} style={pitOptBtn(selected)}>
+                              <span style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</span>
+                              <span style={{ fontSize: 10, color: selected ? PIT_COLOR + "aa" : "#475569", fontWeight: 400 }}>{opt.desc}</span>
+                            </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+              );
+            })}
+
+            <div style={pitCard}>
+              <div style={pitLbl}>Free Notes</div>
+              <textarea
+                  value={pitNotes}
+                  onChange={e => setPitNotes(e.target.value)}
+                  placeholder="Build quality, mechanisms, driver comments, anything else..."
+                  rows={4}
+                  style={{ ...pitInp, resize: "none", fontSize: 13 }}
+              />
             </div>
           </div>
 
-          <button onClick={goToPreMatch} style={{ ...btn("#1e1e2e", "#94a3b8"), width: "100%", marginBottom: 8, fontSize: 11, letterSpacing: 2 }}>← PRE-MATCH SETUP</button>
-          <button onClick={startMatch}   style={{ ...btn("#3b82f6"), width: "100%", marginBottom: 20, fontSize: 14, letterSpacing: 2 }}>▶ START MATCH TIMER</button>
-
-          {savedMatches.length > 0 && (
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <div style={{ fontSize: 10, letterSpacing: 2, color: "#64748b" }}>SAVED ({savedMatches.length})</div>
-                  <button onClick={sendAll} style={{ ...btn("#6366f1"), padding: "7px 14px", fontSize: 10 }}>SEND ALL →</button>
+          <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "#0f0f1a", borderTop: "2px solid #1e1e2e", padding: "10px 14px 20px", zIndex: 200 }}>
+            {!allAnswered && (
+                <div style={{ fontSize: 10, color: "#475569", textAlign: "center", marginBottom: 8, letterSpacing: 1 }}>
+                  ANSWER ALL 4 QUESTIONS TO SAVE
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {savedMatches.map((m, i) => (
-                      <div key={i} style={{ ...card, marginBottom: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                            <span style={{ color: "#f1f5f9", fontWeight: 700 }}>Q{m.matchInfo.matchNum || "?"}</span>
-                            <span style={{ color: "#64748b" }}>·</span>
-                            <span style={{ color: "#94a3b8" }}>#{m.matchInfo.teamNum || "?"}</span>
-                          </div>
-                          <div style={{ fontSize: 10, color: "#475569" }}>
-                            {m.matchInfo.scoutName || "No name"} · <span style={{ color: m.matchInfo.allianceColor === "blue" ? "#60a5fa" : "#f87171" }}>{m.matchInfo.allianceColor?.toUpperCase()}</span>
-                          </div>
-                        </div>
-                        <SendBtn index={i} />
-                      </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <button onClick={() => setScreen("home")} style={btn("#1e1e2e", "#94a3b8")}>← BACK</button>
+              <button
+                  onClick={handleSavePit}
+                  disabled={!allAnswered}
+                  style={{ ...btn(allAnswered ? PIT_COLOR : "#1e1e2e", allAnswered ? "#0a0a0f" : "#475569"), opacity: allAnswered ? 1 : 0.5, cursor: allAnswered ? "pointer" : "not-allowed" }}
+              >
+                SAVE PIT ✓
+              </button>
+            </div>
+          </div>
+        </div>
+    );
+  };
+
+  // Home Screen
+  if (screen === "home") {
+    const totalPending = savedMatches.filter((_, i) => sendStates[i] !== "sent").length + savedPitReports.filter((_, i) => pitSendStates[i] !== "sent").length;
+
+    return (
+        <div style={appStyle}>
+          <div style={{ padding: 20 }}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 10, letterSpacing: 4, color: "#3b82f6", marginBottom: 4 }}>FRC 2026</div>
+              <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: -1 }}>REBUILT</div>
+              <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2 }}>QUALITATIVE SCOUT v1.2</div>
+            </div>
+
+            <div style={{ ...card, marginBottom: 16 }}>
+              <div style={lbl}>MATCH INFO</div>
+              {[
+                { label: "Scout Name", key: "scoutName", placeholder: "Your name" },
+                { label: "Team #",     key: "teamNum",   placeholder: "e.g. 254", type: "number" },
+                { label: "Match #",    key: "matchNum",  placeholder: "e.g. Q42" },
+              ].map(f => (
+                  <div key={f.key} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>{f.label}</div>
+                    <input
+                        value={matchInfo[f.key]}
+                        onChange={e => setMatchInfo(m => ({ ...m, [f.key]: e.target.value }))}
+                        placeholder={f.placeholder}
+                        type={f.type || "text"}
+                        style={inp}
+                    />
+                  </div>
+              ))}
+              <div>
+                <div style={{ fontSize: 10, color: "#475569", marginBottom: 6 }}>Alliance Color</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["blue", "red"].map(c => (
+                      <button key={c} onClick={() => setMatchInfo(m => ({ ...m, allianceColor: c }))}
+                              style={{ flex: 1, padding: "10px", borderRadius: 6, fontFamily: "'Courier New', Courier, monospace", fontWeight: 700, fontSize: 13, cursor: "pointer", border: "2px solid", borderColor: matchInfo.allianceColor === c ? (c === "blue" ? "#3b82f6" : "#ef4444") : "#1e1e2e", background: matchInfo.allianceColor === c ? (c === "blue" ? "#1d4ed844" : "#7f1d1d44") : "#0a0a0f", color: matchInfo.allianceColor === c ? (c === "blue" ? "#60a5fa" : "#f87171") : "#475569" }}>
+                        {c.toUpperCase()}
+                      </button>
                   ))}
                 </div>
-                {APPS_SCRIPT_URL === "PASTE_YOUR_URL_HERE" && (
-                    <div style={{ marginTop: 12, background: "#451a03", border: "1px solid #92400e", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#fcd34d", lineHeight: 1.6 }}>
-                      ⚠️ Paste your Apps Script URL into APPS_SCRIPT_URL at the top of App.js
-                    </div>
-                )}
               </div>
-          )}
-        </div>
-        <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}} input::placeholder{color:#334155} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:#0a0a0f} ::-webkit-scrollbar-thumb{background:#1e1e2e;border-radius:4px} button:active{transform:scale(0.97)}`}</style>
-      </div>
-  );
+            </div>
 
-  // ── SCOUT ───────────────────────────────────────────────────────────────────
-  const obs = PHASE_OBSERVATIONS[currentPhase.id];
-  const isDebrief = currentPhase.id === "debrief";
-  const isPre = currentPhase.id === "pre";
+            <button onClick={goToPreMatch} style={{ ...btn("#1e1e2e", "#94a3b8"), width: "100%", marginBottom: 8, fontSize: 11, letterSpacing: 2 }}>← PRE-MATCH SETUP</button>
+            <button onClick={startMatch}   style={{ ...btn("#3b82f6"), width: "100%", marginBottom: 8, fontSize: 14, letterSpacing: 2 }}>▶ START MATCH TIMER</button>
+            <button onClick={() => setScreen("pit")} style={{ ...btn("#1a1a0a", "#f5c800"), width: "100%", marginBottom: 20, fontSize: 13, letterSpacing: 2, border: "1px solid #f5c80033" }}>🔍 PIT SCOUT</button>
+
+            {savedMatches.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, letterSpacing: 2, color: "#64748b" }}>MATCHES ({savedMatches.length})</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {savedMatches.map((m, i) => (
+                        <div key={i} style={{ ...card, marginBottom: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                              <span style={{ color: "#f1f5f9", fontWeight: 700 }}>Q{m.matchInfo.matchNum || "?"}</span>
+                              <span style={{ color: "#64748b" }}>·</span>
+                              <span style={{ color: "#94a3b8" }}>#{m.matchInfo.teamNum || "?"}</span>
+                            </div>
+                            <div style={{ fontSize: 10, color: "#475569" }}>
+                              {m.matchInfo.scoutName || "No name"} · <span style={{ color: m.matchInfo.allianceColor === "blue" ? "#60a5fa" : "#f87171" }}>{m.matchInfo.allianceColor?.toUpperCase()}</span>
+                            </div>
+                          </div>
+                          <SendBtn index={i} type="match" />
+                        </div>
+                    ))}
+                  </div>
+                </div>
+            )}
+
+            {savedPitReports.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, letterSpacing: 2, color: "#64748b" }}>PIT REPORTS ({savedPitReports.length})</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {savedPitReports.map((p, i) => (
+                        <div key={i} style={{ ...card, marginBottom: 0, display: "flex", justifyContent: "space-between", alignItems: "center", borderColor: "#f5c80022" }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                              <span style={{ color: "#f5c800", fontSize: 9, letterSpacing: 1 }}>PIT</span>
+                              <span style={{ color: "#64748b" }}>·</span>
+                              <span style={{ color: "#f1f5f9", fontWeight: 700 }}>#{p.teamNum || "?"}</span>
+                            </div>
+                            <div style={{ fontSize: 10, color: "#475569" }}>
+                              {p.scoutName || "No name"} · {p.pitData.pitClimb ? `Climb: ${p.pitData.pitClimb.toUpperCase()}` : "No climb data"}
+                            </div>
+                          </div>
+                          <SendBtn index={i} type="pit" />
+                        </div>
+                    ))}
+                  </div>
+                </div>
+            )}
+
+            {(savedMatches.length > 0 || savedPitReports.length > 0) && (
+                <button onClick={sendAll} style={{ ...btn("#6366f1"), width: "100%", fontSize: 11, letterSpacing: 2 }}>
+                  SEND ALL ({totalPending} pending) →
+                </button>
+            )}
+
+            {APPS_SCRIPT_URL === "PASTE_YOUR_URL_HERE" && (
+                <div style={{ marginTop: 12, background: "#451a03", border: "1px solid #92400e", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#fcd34d", lineHeight: 1.6 }}>
+                  ⚠️ Paste your Apps Script URL into APPS_SCRIPT_URL at the top of App.js
+                </div>
+            )}
+          </div>
+          <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}} input::placeholder{color:#334155} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:#0a0a0f} ::-webkit-scrollbar-thumb{background:#1e1e2e;border-radius:4px} button:active{transform:scale(0.97)}`}</style>
+        </div>
+    );
+  }
+
+  // Pit Screen
+  if (screen === "pit") {
+    return <PitScoutScreen />;
+  }
+
+  // Scout Screen
+  const obs = PHASE_OBSERVATIONS[currentPhase?.id];
+  const isDebrief = currentPhase?.id === "debrief";
+  const isPre = currentPhase?.id === "pre";
 
   return (
       <div style={appStyle}>
         <div style={{ padding: "12px 16px 10px", borderBottom: `2px solid ${pc}`, background: phaseFlash ? pc + "33" : "#0f0f1a", transition: "background 0.3s", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
           <div>
-            <div style={{ fontSize: 11, letterSpacing: 3, color: pc, fontWeight: 700 }}>{currentPhase.label}</div>
+            <div style={{ fontSize: 11, letterSpacing: 3, color: pc, fontWeight: 700 }}>{currentPhase?.label}</div>
             {obs && <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>{obs.title}</div>}
           </div>
           {timeLeft !== null && !isPre && !isDebrief
@@ -395,13 +686,13 @@ export default function ScoutingApp() {
           {!isDebrief && !isPre && (
               <div style={card}>
                 <div style={lbl}>Quick Note (this phase)</div>
-                <input value={data[`${currentPhase.id}_note`] || ""} onChange={e => setData(d => ({ ...d, [`${currentPhase.id}_note`]: e.target.value }))} placeholder="e.g. bumped ref table, unusual route..." style={inp} />
+                <input value={data[`${currentPhase?.id}_note`] || ""} onChange={e => setData(d => ({ ...d, [`${currentPhase?.id}_note`]: e.target.value }))} placeholder="e.g. bumped ref table, unusual route..." style={inp} />
               </div>
           )}
 
-          {currentPhase.id === "transition" && <div style={{ background: "#7c2d12", borderRadius: 8, padding: "10px 12px", border: "1px solid #9a3412", fontSize: 11, color: "#fca5a5", marginBottom: 10 }}>⚠️ Both hubs active NOW. Note if robot knows this.</div>}
-          {(currentPhase.id === "shift2" || currentPhase.id === "shift4") && <div style={{ background: "#1c1917", borderRadius: 8, padding: "10px 12px", border: "1px solid #292524", fontSize: 11, color: "#a8a29e", marginBottom: 10 }}>🔄 Hub switched. Did robot adapt immediately?</div>}
-          {currentPhase.id === "endgame" && <div style={{ background: "#14532d", borderRadius: 8, padding: "10px 12px", border: "1px solid #15803d", fontSize: 11, color: "#86efac", marginBottom: 10 }}>🏆 Watch climb level & timing carefully — huge point swings.</div>}
+          {currentPhase?.id === "transition" && <div style={{ background: "#7c2d12", borderRadius: 8, padding: "10px 12px", border: "1px solid #9a3412", fontSize: 11, color: "#fca5a5", marginBottom: 10 }}>⚠️ Both hubs active NOW. Note if robot knows this.</div>}
+          {(currentPhase?.id === "shift2" || currentPhase?.id === "shift4") && <div style={{ background: "#1c1917", borderRadius: 8, padding: "10px 12px", border: "1px solid #292524", fontSize: 11, color: "#a8a29e", marginBottom: 10 }}>🔄 Hub switched. Did robot adapt immediately?</div>}
+          {currentPhase?.id === "endgame" && <div style={{ background: "#14532d", borderRadius: 8, padding: "10px 12px", border: "1px solid #15803d", fontSize: 11, color: "#86efac", marginBottom: 10 }}>🏆 Watch climb level & timing carefully — huge point swings.</div>}
         </div>
 
         <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "#0f0f1a", borderTop: "2px solid #1e1e2e", padding: "10px 14px 20px", zIndex: 200 }}>
@@ -429,3 +720,5 @@ export default function ScoutingApp() {
       </div>
   );
 }
+
+export default App;
